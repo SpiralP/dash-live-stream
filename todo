@@ -1,0 +1,10 @@
+
+ffmpeg outputs to tmp folder,
+http host tmp folder
+
+input from rtmp, based on /path
+-> host http on /path
+
+
+input from obs rtmp or ffmpeg with rtmp://
+easy input from stdin video file

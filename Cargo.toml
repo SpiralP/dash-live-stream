@@ -1,0 +1,15 @@
+[package]
+name = "dash-converter"
+version = "0.1.0"
+authors = ["SpiralP <spiral.palmer@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+clap = "2.33.1"
+env_logger = "0.7.1"
+error-chain = "0.12.2"
+futures = "0.3.5"
+log = "0.4.8"
+rml_rtmp = "0.3.2"
+tokio = { version = "0.2.21", features = ["full"] }
+warp = "0.2.2"
