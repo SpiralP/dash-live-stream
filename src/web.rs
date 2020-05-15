@@ -5,7 +5,7 @@ use warp::Filter;
 
 const INDEX: &str = include_str!("index.html");
 
-pub async fn start(addr: SocketAddr, temp_dir: PathBuf) -> Result<()> {
+pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool) -> Result<()> {
     let cors = warp::cors().allow_any_origin();
 
     let routes = warp::path::end()
@@ -13,11 +13,17 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf) -> Result<()> {
         .or(warp::fs::dir(temp_dir.to_owned()))
         .with(cors);
 
-    debug!("binding to https://{}/", addr);
-    info!("dash file hosted at https://{}/stream.mpd", addr);
-    warp::serve(routes)
-        // .tls()
-        .bind(addr).await;
+    let protocol = if tls { "https" } else { "http" };
+
+    debug!("binding to {}://{}/", protocol, addr);
+    info!("dash file hosted at {}://{}/stream.mpd", protocol, addr);
+    let server = warp::serve(routes);
+
+    if tls {
+        server.tls().bind(addr).await;
+    } else {
+        server.bind(addr).await;
+    };
 
     Ok(())
 }

@@ -26,7 +26,7 @@
       player.volume = 1.0;
       window.player = player;
 
-      var manifestUri = "./out.mpd";
+      var manifestUri = "stream.mpd";
 
       function initApp() {
         // Install built-in polyfills to patch browser incompatibilities.
@@ -45,6 +45,7 @@
       function initPlayer() {
         // Create a Player instance.
         var shakaPlayer = new shaka.Player(player);
+        // shakaPlayer.configure("manifest.dash.ignoreMinBufferTime", true);
 
         // Listen for error events.
         shakaPlayer.addEventListener("error", onErrorEvent);

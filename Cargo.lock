@@ -207,6 +207,7 @@ dependencies = [
  "error-chain",
  "lazy_static",
  "log 0.4.8",
+ "num_cpus",
  "tempdir",
  "tokio",
  "warp",

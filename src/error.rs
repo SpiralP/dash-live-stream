@@ -8,6 +8,7 @@ error_chain! {
         ParseFloatError(::std::num::ParseFloatError);
         ParseIntError(::std::num::ParseIntError);
         ParseBoolError(::std::str::ParseBoolError);
+        AddrParse(::std::net::AddrParseError);
         Clap(clap::Error);
         Warp(warp::Error);
     }
