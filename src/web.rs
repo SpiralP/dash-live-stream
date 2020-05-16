@@ -48,24 +48,26 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf) -> Result<()> {
     let routes = warp::path::end()
         .map(|| warp::reply::html(INDEX))
         .or(warp::addr::remote()
+            .and(warp::header::optional::<IpAddr>("x-forwarded-for"))
             .and(warp::fs::dir(temp_dir.to_owned()))
-            .map(move |addr: Option<SocketAddr>, f: File| {
-                if let Some(addr) = addr {
-                    let ip = addr.ip();
-                    let mut clients = clients.lock().unwrap();
-                    let len = clients.len();
-                    clients
-                        .entry(ip)
-                        .and_modify(|time| {
-                            *time = Instant::now();
-                        })
-                        .or_insert_with(|| {
-                            info!("client {} connected ({} clients)", ip, len + 1);
-                            Instant::now()
-                        });
-                }
-                f
-            }))
+            .map(
+                move |addr: Option<SocketAddr>, proxy_ip: Option<IpAddr>, f: File| {
+                    if let Some(ip) = proxy_ip.or_else(|| addr.map(|addr| addr.ip())) {
+                        let mut clients = clients.lock().unwrap();
+                        let len = clients.len();
+                        clients
+                            .entry(ip)
+                            .and_modify(|time| {
+                                *time = Instant::now();
+                            })
+                            .or_insert_with(|| {
+                                info!("client {} connected ({} clients)", ip, len + 1);
+                                Instant::now()
+                            });
+                    }
+                    f
+                },
+            ))
         .recover(handle_rejection)
         .with(warp::cors().allow_any_origin());
 
