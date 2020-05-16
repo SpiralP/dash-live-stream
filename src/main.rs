@@ -18,7 +18,6 @@ use tokio::runtime::Runtime;
 fn main() -> Result<()> {
     let matches = App::new(crate_name!())
         .version(crate_version!())
-        .about("Does awesome things")
         .arg(
             Arg::with_name("verbose")
                 .long("verbose")
@@ -28,10 +27,7 @@ fn main() -> Result<()> {
         )
         .arg(
             Arg::with_name("file")
-                .long("file")
-                .help("Play a file instead of starting an rtmp server")
-                .value_name("path")
-                .takes_value(true),
+                .help("Play a file instead of starting an rtmp server"),
         )
         .arg(
             Arg::with_name("rtmp-ip")
