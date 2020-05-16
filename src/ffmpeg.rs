@@ -171,11 +171,10 @@ impl Ffmpeg {
                         Ok(Some(status)) => {
                             if status.success() {
                                 info!("ffmpeg exited with: {}", status);
+                                return Ok(());
                             } else {
-                                warn!("ffmpeg exited with: {}", status);
+                                bail!("ffmpeg exited with: {}", status);
                             }
-
-                            return Ok(());
                         }
 
                         Ok(None) => {
