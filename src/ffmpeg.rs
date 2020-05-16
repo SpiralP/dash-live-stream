@@ -49,7 +49,8 @@ impl Ffmpeg {
             }
 
             FfmpegInput::File(path) => {
-                let path = format!("{}", path.display());
+                let absolute_path = path.canonicalize()?;
+                let path = format!("{}", absolute_path.display());
                 args.append(
                     &mut vec!["-re", "-i", &path]
                         .iter()
