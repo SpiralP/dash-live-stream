@@ -3,12 +3,15 @@ mod ffmpeg;
 mod logger;
 mod web;
 
-use self::ffmpeg::Ffmpeg;
+use self::ffmpeg::{Ffmpeg, FfmpegInput};
 use crate::error::*;
 use clap::{crate_name, crate_version, App, Arg};
 use futures::{channel::mpsc, stream::StreamExt};
 use log::*;
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+};
 use tokio::runtime::Runtime;
 
 fn main() -> Result<()> {
@@ -18,10 +21,17 @@ fn main() -> Result<()> {
         .version(crate_version!())
         .about("Does awesome things")
         .arg(
+            Arg::with_name("file")
+                .long("file")
+                .help("Play a file instead of starting an rtmp server")
+                .value_name("path")
+                .takes_value(true),
+        )
+        .arg(
             Arg::with_name("rtmp-ip")
                 .long("rtmp-ip")
-                .value_name("ADDRESS")
                 .help("Sets the listen ip address for rtmp")
+                .value_name("address")
                 .takes_value(true)
                 .default_value("127.0.0.1"),
         )
@@ -29,8 +39,8 @@ fn main() -> Result<()> {
             Arg::with_name("rtmp-port")
                 .short("r")
                 .long("rtmp-port")
-                .value_name("PORT")
                 .help("Sets the listen rtmp port")
+                .value_name("port")
                 .takes_value(true)
                 .default_value("1935"),
         )
@@ -38,27 +48,19 @@ fn main() -> Result<()> {
             Arg::with_name("http-ip")
                 .short("i")
                 .long("http-ip")
-                .value_name("ADDRESS")
                 .help("Sets the listen ip address for http")
+                .value_name("address")
                 .takes_value(true)
-                .default_value("127.0.0.1"),
+                .default_value("0.0.0.0"),
         )
         .arg(
             Arg::with_name("http-port")
                 .short("p")
                 .long("http-port")
-                .value_name("PORT")
                 .help("Sets the listen http port")
+                .value_name("port")
                 .takes_value(true)
                 .default_value("3000"),
-        )
-        .arg(
-            Arg::with_name("tls")
-                .short("s")
-                .long("tls")
-                .alias("ssl")
-                .alias("https")
-                .help("Use secured https"),
         )
         .arg(
             Arg::with_name("cpu-used")
@@ -76,6 +78,7 @@ fn main() -> Result<()> {
                      Utilization / Speed' at https://trac.ffmpeg.org/wiki/Encode/VP9 and \
                      https://www.webmproject.org/docs/encoder-parameters/",
                 )
+                .value_name("number")
                 .takes_value(true)
                 .default_value("5"),
         )
@@ -83,6 +86,7 @@ fn main() -> Result<()> {
             Arg::with_name("video-resolution")
                 .long("resolution")
                 .help("Sets resolution of the output video")
+                .value_name("WIDTHxHEIGHT")
                 .takes_value(true)
                 .default_value("1280x720"),
         )
@@ -93,6 +97,7 @@ fn main() -> Result<()> {
                 .long_help(
                     "Sets bitrate of the output video.\n1200-4000k for 720p\n4000-8000k for 1080p",
                 )
+                .value_name("bitrate")
                 .takes_value(true)
                 .default_value("4000k"),
         )
@@ -106,6 +111,7 @@ fn main() -> Result<()> {
                      values range from 15–35, with 31 being recommended for 1080p HD video.\nMore \
                      info under 'Constrained Quality' at https://trac.ffmpeg.org/wiki/Encode/VP9",
                 )
+                .value_name("value")
                 .takes_value(true)
                 .default_value("30"),
         )
@@ -113,6 +119,7 @@ fn main() -> Result<()> {
             Arg::with_name("framerate")
                 .long("framerate")
                 .help("Sets the framerate of the output video")
+                .value_name("fps")
                 .takes_value(true)
                 .default_value("30"),
         )
@@ -120,6 +127,7 @@ fn main() -> Result<()> {
             Arg::with_name("audio-sample-rate")
                 .long("audio-sample-rate")
                 .help("Sets the sample rate of the output audio")
+                .value_name("sample-rate")
                 .takes_value(true)
                 .default_value("44100"),
         )
@@ -130,16 +138,23 @@ fn main() -> Result<()> {
                 .long_help(
                     "Sets the bitrate of the output audio.\n128kbps for 720p\n192kbps for 1080p",
                 )
+                .value_name("bitrate")
                 .takes_value(true)
                 .default_value("128k"),
         )
         .get_matches();
 
+    let input = if let Some(path) = matches.value_of("file") {
+        let path = PathBuf::from(path);
+        FfmpegInput::File(path)
+    } else {
+        let rtmp_ip: IpAddr = matches.value_of("rtmp-ip").unwrap().parse()?;
+        let rtmp_port: u16 = matches.value_of("rtmp-port").unwrap().parse()?;
+        FfmpegInput::Rtmp(SocketAddr::new(rtmp_ip, rtmp_port))
+    };
+
     let http_ip: IpAddr = matches.value_of("http-ip").unwrap().parse()?;
     let http_port: u16 = matches.value_of("http-port").unwrap().parse()?;
-
-    let rtmp_ip: IpAddr = matches.value_of("rtmp-ip").unwrap().parse()?;
-    let rtmp_port: u16 = matches.value_of("rtmp-port").unwrap().parse()?;
 
     let framerate = matches.value_of("framerate").unwrap().parse()?;
 
@@ -151,8 +166,6 @@ fn main() -> Result<()> {
 
     let cpu_used = matches.value_of("cpu-used").unwrap().parse()?;
     let crf = matches.value_of("crf").unwrap().parse()?;
-
-    let tls = matches.is_present("tls");
 
     let temp_dir = tempfile::Builder::new()
         .prefix(&format!(".{}", crate_name!()))
@@ -177,8 +190,7 @@ fn main() -> Result<()> {
             let sender = sender.clone();
 
             tokio::spawn(async move {
-                if let Err(e) =
-                    web::start(SocketAddr::new(http_ip, http_port), temp_dir_path, tls).await
+                if let Err(e) = web::start(SocketAddr::new(http_ip, http_port), temp_dir_path).await
                 {
                     error!("web: {}", e);
                 }
@@ -189,8 +201,7 @@ fn main() -> Result<()> {
         {
             let mut ffmpeg = Ffmpeg {
                 command: None,
-                rtmp_ip,
-                rtmp_port,
+                input,
                 cpu_used,
                 framerate,
                 crf,
