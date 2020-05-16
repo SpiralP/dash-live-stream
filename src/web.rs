@@ -1,14 +1,71 @@
 use crate::error::*;
+use futures::prelude::*;
 use log::*;
-use std::{convert::Infallible, net::SocketAddr, path::PathBuf};
-use warp::{http::StatusCode, Filter, Rejection, Reply};
+use std::{
+    collections::HashMap,
+    convert::Infallible,
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+use warp::{fs::File, http::StatusCode, Filter, Rejection, Reply};
 
 const INDEX: &str = include_str!("index.html");
 
 pub async fn start(addr: SocketAddr, temp_dir: PathBuf) -> Result<()> {
+    let clients: Arc<Mutex<HashMap<IpAddr, Instant>>> = Default::default();
+
+    let checker_handle = {
+        let clients = clients.clone();
+
+        let (f, handle) = async move {
+            loop {
+                tokio::time::delay_for(Duration::from_millis(1000)).await;
+                {
+                    let now = Instant::now();
+
+                    let mut to_remove = Vec::new();
+                    let mut clients = clients.lock().unwrap();
+                    for (ip, time) in clients.iter() {
+                        if now - *time > Duration::from_secs(3 * 2) {
+                            to_remove.push(*ip);
+                        }
+                    }
+
+                    for ip in to_remove {
+                        clients.remove(&ip);
+                        info!("client {} left ({} clients)", ip, clients.len());
+                    }
+                }
+            }
+        }
+        .remote_handle();
+        tokio::spawn(f);
+        handle
+    };
+
     let routes = warp::path::end()
         .map(|| warp::reply::html(INDEX))
-        .or(warp::fs::dir(temp_dir.to_owned()))
+        .or(warp::addr::remote()
+            .and(warp::fs::dir(temp_dir.to_owned()))
+            .map(move |addr: Option<SocketAddr>, f: File| {
+                if let Some(addr) = addr {
+                    let ip = addr.ip();
+                    let mut clients = clients.lock().unwrap();
+                    let len = clients.len();
+                    clients
+                        .entry(ip)
+                        .and_modify(|time| {
+                            *time = Instant::now();
+                        })
+                        .or_insert_with(|| {
+                            info!("client {} connected ({} clients)", ip, len + 1);
+                            Instant::now()
+                        });
+                }
+                f
+            }))
         .recover(handle_rejection)
         .with(warp::cors().allow_any_origin());
 
@@ -16,6 +73,8 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf) -> Result<()> {
     info!("hosting dash manifest at http://{}/stream.mpd", addr);
 
     warp::serve(routes).bind(addr).await;
+
+    drop(checker_handle);
 
     Ok(())
 }
