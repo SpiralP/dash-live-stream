@@ -73,32 +73,77 @@ async fn main() -> Result<()> {
                 .help("Use secured https"),
         )
         .arg(
-            Arg::with_name("speed")
-                .long("speed")
-                .help("Sets amount of cpu to use for encoding, higher means less cpu.")
+            Arg::with_name("cpu-used")
+                .alias("speed")
+                .long("cpu-used")
+                .help("Sets amount of cpu to use for encoding, higher values mean less cpu")
                 .long_help(
-                    "Speed 5 to 8 should be used for live / real-time encoding.\nLower numbers (5 \
-                     or 6) are higher quality but require more CPU power.\nHigher numbers (7 or \
-                     8) will be lower quality but more manageable for\nlower latency use cases \
-                     and also for lower CPU power devices such as mobile.",
+                    "Sets amount of cpu to use for encoding, higher values mean less cpu.\nThis \
+                     is a value between 0 and 15 that controls how efficient the compression will \
+                     be.\nSpeed 5 to 8 should be used for live / real-time encoding.\nLower \
+                     numbers (5 or 6) are higher quality but require more CPU power.\nHigher \
+                     numbers (7 or 8) will be lower quality but more manageable for lower latency \
+                     use cases and also for lower CPU power devices such as mobile.\nMore info at \
+                     https://developers.google.com/media/vp9/live-encoding and under 'CPU \
+                     Utilization / Speed' at https://trac.ffmpeg.org/wiki/Encode/VP9 and \
+                     https://www.webmproject.org/docs/encoder-parameters/",
                 )
                 .takes_value(true)
                 .default_value("5"),
         )
         .arg(
-            Arg::with_name("video_resolution")
+            Arg::with_name("video-resolution")
                 .long("resolution")
-                .help("Sets resolution of the output video.")
+                .help("Sets resolution of the output video")
                 .takes_value(true)
                 .default_value("1280x720"),
         )
         .arg(
-            Arg::with_name("video_bitrate")
+            Arg::with_name("video-bitrate")
                 .long("video-bitrate")
-                .help("Sets bitrate of the output video.")
-                .long_help("1200-4000k for 720p\n4000-8000k for 1080p")
+                .help("Sets bitrate of the output video")
+                .long_help(
+                    "Sets bitrate of the output video.\n1200-4000k for 720p\n4000-8000k for 1080p",
+                )
                 .takes_value(true)
                 .default_value("4000k"),
+        )
+        .arg(
+            Arg::with_name("crf")
+                .long("crf")
+                .help("Sets the CRF value of the output video")
+                .long_help(
+                    "Sets the CRF (Constant Rate Factor) value of the output video.\nThe CRF \
+                     value can be from 0–63.\nLower values mean better quality.\nRecommended \
+                     values range from 15–35, with 31 being recommended for 1080p HD video.\nMore \
+                     info under 'Constrained Quality' at https://trac.ffmpeg.org/wiki/Encode/VP9",
+                )
+                .takes_value(true)
+                .default_value("30"),
+        )
+        .arg(
+            Arg::with_name("framerate")
+                .long("framerate")
+                .help("Sets the framerate of the output video")
+                .takes_value(true)
+                .default_value("30"),
+        )
+        .arg(
+            Arg::with_name("audio-sample-rate")
+                .long("audio-sample-rate")
+                .help("Sets the sample rate of the output audio")
+                .takes_value(true)
+                .default_value("44100"),
+        )
+        .arg(
+            Arg::with_name("audio-bitrate")
+                .long("audio-bitrate")
+                .help("Sets the bitrate of the output audio")
+                .long_help(
+                    "Sets the bitrate of the output audio.\n128kbps for 720p\n192kbps for 1080p",
+                )
+                .takes_value(true)
+                .default_value("128k"),
         )
         .get_matches();
 
@@ -135,23 +180,16 @@ async fn main() -> Result<()> {
         });
     }
 
-    let video_bitrate = matches.value_of("video_bitrate").unwrap();
-    let video_resolution = matches.value_of("video_resolution").unwrap();
-    let framerate = "20";
-    let audio_sample_rate = "44100";
-    let audio_bitrate = "128k";
+    let framerate = matches.value_of("framerate").unwrap();
 
-    // The CRF value can be from 0–63.
-    // Lower values mean better quality.
-    // Recommended values range from 15–35,
-    // with 31 being recommended for 1080p HD video.
-    let crf = "30";
+    let video_bitrate = matches.value_of("video-bitrate").unwrap();
+    let video_resolution = matches.value_of("video-resolution").unwrap();
 
-    // Speed 5 to 8 should be used for live / real-time encoding.
-    // Lower numbers (5 or 6) are higher quality but require more CPU power.
-    // Higher numbers (7 or 8) will be lower quality but more manageable for
-    // lower latency use cases and also for lower CPU power devices such as mobile.
-    let speed = matches.value_of("speed").unwrap();
+    let audio_sample_rate = matches.value_of("audio-sample-rate").unwrap();
+    let audio_bitrate = matches.value_of("audio-bitrate").unwrap();
+
+    let cpu_used = matches.value_of("cpu-used").unwrap();
+    let crf = matches.value_of("crf").unwrap();
 
     let path = "stream";
     let stream_key = "";
@@ -172,8 +210,8 @@ async fn main() -> Result<()> {
         // https://developers.google.com/media/vp9/live-encoding
         "-quality",
         "realtime",
-        "-speed",
-        &speed,
+        "-cpu-used",
+        &cpu_used,
         "-tile-columns",
         "4",
         "-frame-parallel",
@@ -197,14 +235,13 @@ async fn main() -> Result<()> {
         //
         "-r",
         &framerate,
-        "-preset",
-        "ll",
         "-crf",
         &crf,
         "-b:v",
         &video_bitrate,
         "-s",
         &video_resolution,
+        // at least 1 keyframe per second
         "-keyint_min",
         "60",
         "-g",
@@ -230,7 +267,7 @@ async fn main() -> Result<()> {
         "-extra_window_size",
         "2",
         "-utc_timing_url",
-        "http://time.akamai.com/",
+        "https://time.akamai.com/",
         "-use_timeline",
         "0",
         "-use_template",
@@ -239,9 +276,8 @@ async fn main() -> Result<()> {
         "3",
         "-index_correction",
         "1",
-        // requires ffmpeg 4.2.2
-        // "-ignore_io_errors",
-        // "1",
+        "-ignore_io_errors",
+        "1",
         "stream.mpd",
     ];
 
