@@ -96,7 +96,7 @@ async fn main() -> Result<()> {
             Arg::with_name("video_bitrate")
                 .long("video-bitrate")
                 .help("Sets bitrate of the output video.")
-                .long("1200-4000k for 720p\n4000-8000k for 1080p")
+                .long_help("1200-4000k for 720p\n4000-8000k for 1080p")
                 .takes_value(true)
                 .default_value("4000k"),
         )
