@@ -172,9 +172,10 @@ impl Drop for Ffmpeg {
             if let Err(e) = command.wait() {
                 error!("command.wait(): {}", e);
             }
-        }
 
-        // gross, for windows
-        thread::sleep(Duration::from_millis(1000));
+            // gross, windows doesn't really wait here
+            // temp folder is still locked so it can't be removed
+            thread::sleep(Duration::from_millis(1000));
+        }
     }
 }
