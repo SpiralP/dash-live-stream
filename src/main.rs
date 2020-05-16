@@ -9,7 +9,6 @@ use clap::{crate_name, crate_version, App, Arg};
 use futures::{channel::mpsc, stream::StreamExt};
 use log::*;
 use std::net::{IpAddr, SocketAddr};
-use tempfile::tempdir;
 use tokio::runtime::Runtime;
 
 fn main() -> Result<()> {
@@ -155,7 +154,9 @@ fn main() -> Result<()> {
 
     let tls = matches.is_present("tls");
 
-    let temp_dir = tempdir()?;
+    let temp_dir = tempfile::Builder::new()
+        .prefix(&format!(".{}", crate_name!()))
+        .tempdir()?;
     let temp_dir_path = temp_dir.path().to_owned();
     debug!("created temp dir {:?}", temp_dir_path);
 
