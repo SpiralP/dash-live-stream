@@ -11,6 +11,7 @@ use log::*;
 use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
+    time::Duration,
 };
 use tokio::runtime::Runtime;
 
@@ -215,6 +216,13 @@ fn main() -> Result<()> {
             tokio::spawn(async move {
                 if let Err(e) = ffmpeg.run().await {
                     error!("ffmpeg: {}", e);
+                } else {
+                    info!(
+                        "ffmpeg exited cleanly, sleeping for a bit so that the video finishes \
+                         downloading"
+                    );
+                    // exited cleanly, let's keep hosting the files until the video stops
+                    tokio::time::delay_for(Duration::from_secs(3 * 5)).await;
                 }
                 let _ignore = sender.unbounded_send(());
             });
