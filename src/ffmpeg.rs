@@ -34,10 +34,10 @@ impl Ffmpeg {
         let num_threads = format!("{}", num_cpus::get());
         let framerate = format!("{}", self.framerate);
         let crf = format!("{}", self.crf);
-        let video_bitrate = format!("{}", self.video_bitrate);
-        let video_resolution = format!("{}", self.video_resolution);
-        let audio_bitrate = format!("{}", self.audio_bitrate);
-        let audio_sample_rate = format!("{}", self.audio_sample_rate);
+        let video_bitrate = &self.video_bitrate;
+        let video_resolution = &self.video_resolution;
+        let audio_bitrate = &self.audio_bitrate;
+        let audio_sample_rate = &self.audio_sample_rate;
         let args = vec![
             "-hide_banner",
             "-loglevel",
