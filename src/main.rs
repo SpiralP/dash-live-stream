@@ -16,11 +16,16 @@ use std::{
 use tokio::runtime::Runtime;
 
 fn main() -> Result<()> {
-    logger::initialize(cfg!(debug_assertions), false);
-
     let matches = App::new(crate_name!())
         .version(crate_version!())
         .about("Does awesome things")
+        .arg(
+            Arg::with_name("verbose")
+                .long("verbose")
+                .short("v")
+                .help("Show debug messages, use multiple times for higher verbosity")
+                .multiple(true),
+        )
         .arg(
             Arg::with_name("file")
                 .long("file")
@@ -38,8 +43,8 @@ fn main() -> Result<()> {
         )
         .arg(
             Arg::with_name("rtmp-port")
-                .short("r")
                 .long("rtmp-port")
+                .short("r")
                 .help("Sets the listen rtmp port")
                 .value_name("port")
                 .takes_value(true)
@@ -47,8 +52,8 @@ fn main() -> Result<()> {
         )
         .arg(
             Arg::with_name("http-ip")
-                .short("i")
                 .long("http-ip")
+                .short("i")
                 .help("Sets the listen ip address for http")
                 .value_name("address")
                 .takes_value(true)
@@ -56,8 +61,8 @@ fn main() -> Result<()> {
         )
         .arg(
             Arg::with_name("http-port")
-                .short("p")
                 .long("http-port")
+                .short("p")
                 .help("Sets the listen http port")
                 .value_name("port")
                 .takes_value(true)
@@ -144,6 +149,11 @@ fn main() -> Result<()> {
                 .default_value("128k"),
         )
         .get_matches();
+
+    logger::initialize(
+        cfg!(debug_assertions) || matches.is_present("verbose"),
+        matches.occurrences_of("verbose") > 1,
+    );
 
     let input = if let Some(path) = matches.value_of("file") {
         let path = PathBuf::from(path);
