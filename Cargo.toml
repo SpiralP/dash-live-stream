@@ -6,12 +6,12 @@ edition = "2018"
 
 [dependencies]
 clap = "2.33.1"
+ctrlc = "3.1.4"
 env_logger = "0.7.1"
 error-chain = "0.12.2"
+futures = "0.3.5"
 log = "0.4.8"
+num_cpus = "1.13.0"
 tempdir = "0.3.7"
 tokio = { version = "0.2.21", features = ["full"] }
 warp = { version = "0.2.2", features = ["tls"] }
-ctrlc = "3.1.4"
-lazy_static = "1.4.0"
-num_cpus = "1.13.0"

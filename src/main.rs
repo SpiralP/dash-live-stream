@@ -1,29 +1,18 @@
 mod error;
+mod ffmpeg;
 mod logger;
 mod web;
 
+use self::ffmpeg::Ffmpeg;
 use crate::error::*;
 use clap::{crate_name, crate_version, App, Arg};
-use lazy_static::lazy_static;
+use futures::{channel::mpsc, stream::StreamExt};
 use log::*;
-use std::{
-    net::{IpAddr, SocketAddr},
-    process::{Child, Command},
-    sync::Mutex,
-    time::Duration,
-};
+use std::net::{IpAddr, SocketAddr};
 use tempdir::TempDir;
+use tokio::runtime::Runtime;
 
-lazy_static! {
-    static ref TEMP_DIR: Mutex<Option<TempDir>> = Default::default();
-}
-
-lazy_static! {
-    static ref COMMAND: Mutex<Option<Child>> = Default::default();
-}
-
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     logger::initialize(cfg!(debug_assertions), false);
 
     let matches = App::new(crate_name!())
@@ -153,198 +142,84 @@ async fn main() -> Result<()> {
     let rtmp_ip: IpAddr = matches.value_of("rtmp-ip").unwrap().parse()?;
     let rtmp_port: u16 = matches.value_of("rtmp-port").unwrap().parse()?;
 
+    let framerate = matches.value_of("framerate").unwrap().parse()?;
+
+    let video_bitrate = matches.value_of("video-bitrate").unwrap().to_string();
+    let video_resolution = matches.value_of("video-resolution").unwrap().to_string();
+
+    let audio_sample_rate = matches.value_of("audio-sample-rate").unwrap().to_string();
+    let audio_bitrate = matches.value_of("audio-bitrate").unwrap().to_string();
+
+    let cpu_used = matches.value_of("cpu-used").unwrap().parse()?;
+    let crf = matches.value_of("crf").unwrap().parse()?;
+
     let tls = matches.is_present("tls");
 
     let temp_dir = TempDir::new(env!("CARGO_PKG_NAME"))?;
     let temp_dir_path = temp_dir.path().to_owned();
     debug!("created temp dir {:?}", temp_dir_path);
 
-    {
-        let mut maybe_temp_dir = TEMP_DIR.lock().unwrap();
-        *maybe_temp_dir = Some(temp_dir);
-    }
-
-    ctrlc::set_handler(move || {
-        cleanup();
-    })
-    .expect("Error setting Ctrl-C handler");
-
-    {
-        let temp_dir_path = temp_dir_path.clone();
-        tokio::spawn(async move {
-            if let Err(e) =
-                web::start(SocketAddr::new(http_ip, http_port), temp_dir_path, tls).await
-            {
-                error!("web: {}", e);
-            }
-        });
-    }
-
-    let framerate = matches.value_of("framerate").unwrap();
-
-    let video_bitrate = matches.value_of("video-bitrate").unwrap();
-    let video_resolution = matches.value_of("video-resolution").unwrap();
-
-    let audio_sample_rate = matches.value_of("audio-sample-rate").unwrap();
-    let audio_bitrate = matches.value_of("audio-bitrate").unwrap();
-
-    let cpu_used = matches.value_of("cpu-used").unwrap();
-    let crf = matches.value_of("crf").unwrap();
-
-    let path = "stream";
-    let stream_key = "";
-    let rtmp_addr = format!("rtmp://{}:{}/{}/{}", rtmp_ip, rtmp_port, path, stream_key);
-    let num_threads = format!("{}", num_cpus::get());
-    let args = vec![
-        "-hide_banner",
-        "-loglevel",
-        "warning",
-        "-stats",
-        "-listen",
-        "1",
-        "-i",
-        &rtmp_addr,
-        // video
-        "-c:v",
-        "libvpx-vp9",
-        // https://developers.google.com/media/vp9/live-encoding
-        "-quality",
-        "realtime",
-        "-cpu-used",
-        &cpu_used,
-        "-tile-columns",
-        "4",
-        "-frame-parallel",
-        "1",
-        "-threads",
-        &num_threads,
-        "-static-thresh",
-        "0",
-        "-max-intra-rate",
-        "300",
-        "-lag-in-frames",
-        "0",
-        "-qmin",
-        "4",
-        "-qmax",
-        "48",
-        "-row-mt",
-        "1",
-        "-error-resilient",
-        "1",
-        //
-        "-r",
-        &framerate,
-        "-crf",
-        &crf,
-        "-b:v",
-        &video_bitrate,
-        "-s",
-        &video_resolution,
-        // at least 1 keyframe per second
-        "-keyint_min",
-        "60",
-        "-g",
-        "60",
-        // audio
-        "-c:a",
-        "libvorbis",
-        "-b:a",
-        &audio_bitrate,
-        "-ar",
-        &audio_sample_rate,
-        "-ac",
-        "2",
-        // output
-        "-f",
-        "dash",
-        "-remove_at_exit",
-        "1",
-        "-dash_segment_type",
-        "webm",
-        "-window_size",
-        "5",
-        "-extra_window_size",
-        "2",
-        "-utc_timing_url",
-        "https://time.akamai.com/",
-        "-use_timeline",
-        "0",
-        "-use_template",
-        "1",
-        "-seg_duration",
-        "3",
-        "-index_correction",
-        "1",
-        "-ignore_io_errors",
-        "1",
-        "stream.mpd",
-    ];
-
-    debug!("ffmpeg {:?}", args);
-
-    let command = Command::new("ffmpeg")
-        .current_dir(&temp_dir_path)
-        .args(args)
-        .spawn()?;
-
-    {
-        let mut maybe_command = COMMAND.lock().unwrap();
-        *maybe_command = Some(command);
-    }
-
-    loop {
-        tokio::time::delay_for(Duration::from_secs(1)).await;
+    let mut rt = Runtime::new()?;
+    rt.block_on(async move {
+        let (sender, mut receiver) = mpsc::unbounded();
 
         {
-            let mut maybe_command = COMMAND.lock().unwrap();
-            if let Some(command) = maybe_command.as_mut() {
-                match command.try_wait() {
-                    Ok(Some(status)) => {
-                        debug!("ffmpeg exited with: {}", status);
-                        break;
-                    }
-
-                    Ok(None) => {
-                        // still running
-                    }
-
-                    Err(e) => {
-                        error!("ffmpeg error attempting to wait: {}", e);
-                        break;
-                    }
-                }
-            } else {
-                break;
-            }
+            let sender = sender.clone();
+            ctrlc::set_handler(move || {
+                let _ignore = sender.unbounded_send(());
+            })
+            .expect("Error setting Ctrl-C handler");
         }
-    }
 
-    cleanup();
+        {
+            let temp_dir_path = temp_dir_path.clone();
+            let sender = sender.clone();
+
+            tokio::spawn(async move {
+                if let Err(e) =
+                    web::start(SocketAddr::new(http_ip, http_port), temp_dir_path, tls).await
+                {
+                    error!("web: {}", e);
+                }
+                let _ignore = sender.unbounded_send(());
+            });
+        }
+
+        {
+            let mut ffmpeg = Ffmpeg {
+                command: None,
+                rtmp_ip,
+                rtmp_port,
+                cpu_used,
+                framerate,
+                crf,
+                video_bitrate,
+                video_resolution,
+                audio_bitrate,
+                audio_sample_rate,
+                temp_dir_path,
+            };
+
+            tokio::spawn(async move {
+                if let Err(e) = ffmpeg.run().await {
+                    error!("ffmpeg: {}", e);
+                }
+                let _ignore = sender.unbounded_send(());
+            });
+        }
+
+        // wait until something either fails, or user presses ctrl-c
+        receiver.next().await;
+        debug!("exiting");
+
+        Ok::<_, Error>(())
+    })?;
+
+    drop(rt);
+
+    if let Err(e) = temp_dir.close() {
+        error!("temp_dir: {}", e);
+    }
 
     Ok(())
-}
-
-fn cleanup() {
-    {
-        let mut maybe_command = COMMAND.lock().unwrap();
-        if let Some(mut command) = maybe_command.take() {
-            let _ignore = command.kill();
-            if let Err(e) = command.wait() {
-                error!("command.wait(): {}", e);
-            }
-        }
-    }
-
-    // gross, for windows
-    std::thread::sleep(Duration::from_secs(1));
-
-    {
-        let mut maybe_temp_dir = TEMP_DIR.lock().unwrap();
-        if let Some(temp_dir) = maybe_temp_dir.take() {
-            if let Err(e) = temp_dir.close() {
-                error!("temp_dir: {}", e);
-            }
-        }
-    }
 }
