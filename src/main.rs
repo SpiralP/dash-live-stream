@@ -26,9 +26,14 @@ fn main() -> Result<()> {
                 .multiple(true),
         )
         .arg(
-            Arg::with_name("file")
-                .help("Play a file instead of starting an rtmp server"),
+            Arg::with_name("tls")
+                .short("s")
+                .long("tls")
+                .alias("ssl")
+                .alias("https")
+                .help("Use secured https"),
         )
+        .arg(Arg::with_name("file").help("Play a file instead of starting an rtmp server"))
         .arg(
             Arg::with_name("rtmp-ip")
                 .long("rtmp-ip")
@@ -151,6 +156,8 @@ fn main() -> Result<()> {
         matches.occurrences_of("verbose") > 1,
     );
 
+    let tls = matches.is_present("tls");
+
     let input = if let Some(path) = matches.value_of("file") {
         let path = PathBuf::from(path);
         FfmpegInput::File(path)
@@ -197,7 +204,8 @@ fn main() -> Result<()> {
             let sender = sender.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = web::start(SocketAddr::new(http_ip, http_port), temp_dir_path).await
+                if let Err(e) =
+                    web::start(SocketAddr::new(http_ip, http_port), temp_dir_path, tls).await
                 {
                     error!("web: {}", e);
                 }

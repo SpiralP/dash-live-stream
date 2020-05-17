@@ -1,3 +1,5 @@
+mod cert;
+
 use crate::error::*;
 use futures::prelude::*;
 use log::*;
@@ -13,7 +15,7 @@ use warp::{fs::File, http::StatusCode, Filter, Rejection, Reply};
 
 const INDEX: &str = include_str!("index.html");
 
-pub async fn start(addr: SocketAddr, temp_dir: PathBuf) -> Result<()> {
+pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool) -> Result<()> {
     let clients: Arc<Mutex<HashMap<IpAddr, Instant>>> = Default::default();
 
     let checker_handle = {
@@ -71,10 +73,30 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf) -> Result<()> {
         .recover(handle_rejection)
         .with(warp::cors().allow_any_origin());
 
-    info!("starting http server at http://{}/", addr);
-    info!("hosting dash manifest at http://{}/stream.mpd", addr);
+    let protocol = if tls { "https" } else { "http" };
 
-    warp::serve(routes).bind(addr).await;
+    info!("starting {} server at {}://{}/", protocol, protocol, addr);
+    info!(
+        "hosting dash manifest at {}://{}/stream.mpd",
+        protocol, addr
+    );
+
+    let server = warp::serve(routes);
+    if tls {
+        let (cert, key) = cert::generate_cert_and_key()?;
+
+        let cert_bytes = cert.to_pem()?;
+        let key_bytes = key.private_key_to_pem_pkcs8()?;
+
+        server
+            .tls()
+            .cert(&cert_bytes)
+            .key(&key_bytes)
+            .bind(addr)
+            .await;
+    } else {
+        server.bind(addr).await;
+    };
 
     drop(checker_handle);
 
