@@ -16,9 +16,6 @@ pub fn generate_cert_and_key() -> Result<(X509, PKey<Private>)> {
     let ec = EcKey::generate(&group)?;
     let privkey = PKey::from_ec_key(ec)?;
 
-    // let rsa = Rsa::generate(2048)?;
-    // let privkey = PKey::from_rsa(rsa)?;
-
     let mut x509_name = X509NameBuilder::new()?;
     x509_name.append_entry_by_text("CN", "127.0.0.1")?;
     let x509_name = x509_name.build();
