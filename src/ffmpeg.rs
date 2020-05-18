@@ -138,7 +138,7 @@ impl Ffmpeg {
             &self.video_bitrate,
             "-s",
             &self.video_resolution,
-            // at least 1 keyframe per second
+            // at least 1 keyframe every 60 frames
             "-keyint_min",
             "60",
             "-g",
@@ -150,17 +150,22 @@ impl Ffmpeg {
             &self.audio_bitrate,
             "-ar",
             &self.audio_sample_rate,
+            // # audio channels
             "-ac",
             "2",
             // output
             "-f",
             "dash",
+            // remove chunk files at exit
             "-remove_at_exit",
             "1",
             "-dash_segment_type",
             "webm",
+            // 5 chunk files in the manifest
             "-window_size",
             "5",
+            // 2 extra chunk files not in the manifest
+            // before getting deleted
             "-extra_window_size",
             "2",
             "-utc_timing_url",
@@ -169,6 +174,7 @@ impl Ffmpeg {
             "1",
             "-use_template",
             "1",
+            // 3 seconds each chunk file
             "-seg_duration",
             "3",
             "-index_correction",

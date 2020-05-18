@@ -40,6 +40,7 @@ fn main() -> Result<()> {
         .arg(Arg::with_name("file").help("Play a file instead of starting an rtmp server"))
         .arg(
             Arg::with_name("seek")
+                .alias("time")
                 .long("seek")
                 .help("Seek input file to time")
                 .value_name("time")
