@@ -83,6 +83,7 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool) -> Result<()>
 
     let server = warp::serve(routes);
     if tls {
+        warn!("detecting client connections won't work for https!");
         let (cert, key) = cert::generate_cert_and_key()?;
 
         let cert_bytes = cert.to_pem()?;

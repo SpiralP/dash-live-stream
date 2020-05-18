@@ -1,4 +1,4 @@
-use crate::error::*;
+use crate::{error::*, helpers::*};
 use log::*;
 use std::{
     net::SocketAddr,
@@ -10,13 +10,17 @@ use std::{
 
 pub enum FfmpegInput {
     Rtmp(SocketAddr),
-    File { path: PathBuf, seek: Option<String> },
+    File {
+        path: PathBuf,
+        seek: Option<Duration>,
+    },
 }
 
 pub struct Ffmpeg {
     pub command: Option<Child>,
 
     pub input: FfmpegInput,
+
     pub cpu_used: u8,
     pub framerate: u8,
     pub crf: u8,
@@ -25,6 +29,7 @@ pub struct Ffmpeg {
     pub audio_bitrate: String,
     pub audio_sample_rate: String,
     pub temp_dir_path: PathBuf,
+    pub subtitles_path: Option<PathBuf>,
 }
 
 impl Ffmpeg {
@@ -32,10 +37,7 @@ impl Ffmpeg {
         let stream_path = "stream";
         let stream_key = "";
 
-        let mut args: Vec<String> = vec!["-hide_banner", "-loglevel", "warning", "-stats"]
-            .iter()
-            .map(ToString::to_string)
-            .collect();
+        let mut args: Vec<String> = Vec::new();
 
         macro_rules! append {
             ( $vec:ident, $( $item:expr ),* $(,)* ) => {
@@ -45,6 +47,8 @@ impl Ffmpeg {
             };
         }
 
+        append!(args, "-hide_banner", "-loglevel", "warning", "-stats");
+
         match &self.input {
             FfmpegInput::Rtmp(addr) => {
                 let rtmp_addr = format!("rtmp://{}/{}/{}", addr, stream_path, stream_key);
@@ -52,17 +56,46 @@ impl Ffmpeg {
             }
 
             FfmpegInput::File { path, seek } => {
-                let absolute_path = path.canonicalize()?;
+                let absolute_path = get_absolute_path(path);
                 let path = format!("{}", absolute_path.display());
 
                 // play at 1x speed
                 append!(args, "-re");
 
                 if let Some(seek) = seek {
-                    append!(args, "-ss", seek);
+                    append!(args, "-ss", format!("{}", seek.as_secs_f32()));
                 }
 
                 append!(args, "-i", &path);
+            }
+        }
+
+        // subtitles
+        if let Some(subtitles_path) = &self.subtitles_path {
+            let absolute_path = get_absolute_path(subtitles_path);
+            // https://superuser.com/questions/1247197/ffmpeg-absolute-path-error
+            let escaped_path = format!("{}", absolute_path.display())
+                .replace(r"\", r"\\\\")
+                .replace(r":", r"\\:");
+
+            let seek = if let FfmpegInput::File { path: _, seek } = &self.input {
+                *seek
+            } else {
+                None
+            };
+
+            if let Some(seek) = seek {
+                append!(
+                    args,
+                    "-vf",
+                    format!(
+                        "setpts=PTS+{}/TB,subtitles=filename={},setpts=PTS-STARTPTS",
+                        seek.as_secs_f32(),
+                        escaped_path
+                    )
+                );
+            } else {
+                append!(args, "-vf", format!("subtitles=filename={}", escaped_path));
             }
         }
 
@@ -159,8 +192,8 @@ impl Ffmpeg {
         }
 
         let command = Command::new("ffmpeg")
-            .current_dir(&self.temp_dir_path)
             .args(args)
+            .current_dir(&self.temp_dir_path)
             .spawn()?;
 
         self.command = Some(command);

@@ -1,10 +1,14 @@
 mod error;
 mod ffmpeg;
+mod helpers;
 mod logger;
 mod web;
 
-use self::ffmpeg::{Ffmpeg, FfmpegInput};
-use crate::error::*;
+use crate::{
+    error::*,
+    ffmpeg::{Ffmpeg, FfmpegInput},
+    helpers::*,
+};
 use clap::{crate_name, crate_version, App, Arg};
 use futures::{channel::mpsc, stream::StreamExt};
 use log::*;
@@ -36,10 +40,18 @@ fn main() -> Result<()> {
         .arg(Arg::with_name("file").help("Play a file instead of starting an rtmp server"))
         .arg(
             Arg::with_name("seek")
-                .help("Seek input file to time")
                 .long("seek")
+                .help("Seek input file to time")
                 .value_name("time")
-                .takes_value(true),
+                .takes_value(true)
+                .requires("file"),
+        )
+        .arg(
+            Arg::with_name("subtitles")
+                .long("subtitles")
+                .help("Use a subtitles file to hardsub subtitles into the video track")
+                .value_name("file")
+                .takes_value(true)
         )
         .arg(
             Arg::with_name("rtmp-ip")
@@ -167,7 +179,11 @@ fn main() -> Result<()> {
 
     let input = if let Some(path) = matches.value_of("file") {
         let path = PathBuf::from(path);
-        let seek = matches.value_of("seek").map(ToString::to_string);
+        let seek = if let Some(seek) = matches.value_of("seek") {
+            Some(parse_duration(seek)?)
+        } else {
+            None
+        };
         FfmpegInput::File { path, seek }
     } else {
         let rtmp_ip: IpAddr = matches.value_of("rtmp-ip").unwrap().parse()?;
@@ -188,6 +204,8 @@ fn main() -> Result<()> {
 
     let cpu_used = matches.value_of("cpu-used").unwrap().parse()?;
     let crf = matches.value_of("crf").unwrap().parse()?;
+
+    let subtitles_path = matches.value_of("subtitles").map(Into::into);
 
     let temp_dir = tempfile::Builder::new()
         .prefix(&format!(".{}", crate_name!()))
@@ -233,6 +251,7 @@ fn main() -> Result<()> {
                 audio_bitrate,
                 audio_sample_rate,
                 temp_dir_path,
+                subtitles_path,
             };
 
             tokio::spawn(async move {
@@ -244,7 +263,7 @@ fn main() -> Result<()> {
                          downloading"
                     );
                     // exited cleanly, let's keep hosting the files until the video stops
-                    tokio::time::delay_for(Duration::from_secs(3 * 5)).await;
+                    tokio::time::delay_for(Duration::from_secs(6)).await;
                 }
                 let _ignore = sender.unbounded_send(());
             });
