@@ -35,6 +35,13 @@ fn main() -> Result<()> {
         )
         .arg(Arg::with_name("file").help("Play a file instead of starting an rtmp server"))
         .arg(
+            Arg::with_name("seek")
+                .help("Seek input file to time")
+                .long("seek")
+                .value_name("time")
+                .takes_value(true),
+        )
+        .arg(
             Arg::with_name("rtmp-ip")
                 .long("rtmp-ip")
                 .help("Sets the listen ip address for rtmp")
@@ -160,7 +167,8 @@ fn main() -> Result<()> {
 
     let input = if let Some(path) = matches.value_of("file") {
         let path = PathBuf::from(path);
-        FfmpegInput::File(path)
+        let seek = matches.value_of("seek").map(ToString::to_string);
+        FfmpegInput::File { path, seek }
     } else {
         let rtmp_ip: IpAddr = matches.value_of("rtmp-ip").unwrap().parse()?;
         let rtmp_port: u16 = matches.value_of("rtmp-port").unwrap().parse()?;

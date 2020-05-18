@@ -10,7 +10,7 @@ use std::{
 
 pub enum FfmpegInput {
     Rtmp(SocketAddr),
-    File(PathBuf),
+    File { path: PathBuf, seek: Option<String> },
 }
 
 pub struct Ffmpeg {
@@ -37,110 +37,112 @@ impl Ffmpeg {
             .map(ToString::to_string)
             .collect();
 
+        macro_rules! append {
+            ( $vec:ident, $( $item:expr ),* $(,)* ) => {
+                $(
+                    $vec.push($item.into());
+                )*
+            };
+        }
+
         match &self.input {
             FfmpegInput::Rtmp(addr) => {
                 let rtmp_addr = format!("rtmp://{}/{}/{}", addr, stream_path, stream_key);
-                args.append(
-                    &mut vec!["-listen", "1", "-i", &rtmp_addr]
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect(),
-                );
+                append!(args, "-listen", "1", "-i", rtmp_addr);
             }
 
-            FfmpegInput::File(path) => {
+            FfmpegInput::File { path, seek } => {
                 let absolute_path = path.canonicalize()?;
                 let path = format!("{}", absolute_path.display());
-                args.append(
-                    &mut vec!["-re", "-i", &path]
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect(),
-                );
+
+                // play at 1x speed
+                append!(args, "-re");
+
+                if let Some(seek) = seek {
+                    append!(args, "-ss", seek);
+                }
+
+                append!(args, "-i", &path);
             }
         }
 
-        args.append(
-            &mut vec![
-                // video
-                "-c:v",
-                "libvpx-vp9",
-                // https://developers.google.com/media/vp9/live-encoding
-                "-quality",
-                "realtime",
-                "-cpu-used",
-                &format!("{}", self.cpu_used),
-                "-tile-columns",
-                "4",
-                "-frame-parallel",
-                "1",
-                "-threads",
-                &format!("{}", num_cpus::get()),
-                "-static-thresh",
-                "0",
-                "-max-intra-rate",
-                "300",
-                "-lag-in-frames",
-                "0",
-                "-qmin",
-                "4",
-                "-qmax",
-                "48",
-                "-row-mt",
-                "1",
-                "-error-resilient",
-                "1",
-                //
-                "-r",
-                &format!("{}", self.framerate),
-                "-crf",
-                &format!("{}", self.crf),
-                "-b:v",
-                &self.video_bitrate,
-                "-s",
-                &self.video_resolution,
-                // at least 1 keyframe per second
-                "-keyint_min",
-                "60",
-                "-g",
-                "60",
-                // audio
-                "-c:a",
-                "libvorbis",
-                "-b:a",
-                &self.audio_bitrate,
-                "-ar",
-                &self.audio_sample_rate,
-                "-ac",
-                "2",
-                // output
-                "-f",
-                "dash",
-                "-remove_at_exit",
-                "1",
-                "-dash_segment_type",
-                "webm",
-                "-window_size",
-                "5",
-                "-extra_window_size",
-                "2",
-                "-utc_timing_url",
-                "https://time.akamai.com/",
-                "-use_timeline",
-                "1",
-                "-use_template",
-                "1",
-                "-seg_duration",
-                "3",
-                "-index_correction",
-                "1",
-                "-ignore_io_errors",
-                "1",
-                "stream.mpd",
-            ]
-            .iter()
-            .map(ToString::to_string)
-            .collect(),
+        append!(
+            args,
+            // video
+            "-c:v",
+            "libvpx-vp9",
+            // https://developers.google.com/media/vp9/live-encoding
+            "-quality",
+            "realtime",
+            "-cpu-used",
+            &format!("{}", self.cpu_used),
+            "-tile-columns",
+            "4",
+            "-frame-parallel",
+            "1",
+            "-threads",
+            &format!("{}", num_cpus::get()),
+            "-static-thresh",
+            "0",
+            "-max-intra-rate",
+            "300",
+            "-lag-in-frames",
+            "0",
+            "-qmin",
+            "4",
+            "-qmax",
+            "48",
+            "-row-mt",
+            "1",
+            "-error-resilient",
+            "1",
+            //
+            "-r",
+            &format!("{}", self.framerate),
+            "-crf",
+            &format!("{}", self.crf),
+            "-b:v",
+            &self.video_bitrate,
+            "-s",
+            &self.video_resolution,
+            // at least 1 keyframe per second
+            "-keyint_min",
+            "60",
+            "-g",
+            "60",
+            // audio
+            "-c:a",
+            "libvorbis",
+            "-b:a",
+            &self.audio_bitrate,
+            "-ar",
+            &self.audio_sample_rate,
+            "-ac",
+            "2",
+            // output
+            "-f",
+            "dash",
+            "-remove_at_exit",
+            "1",
+            "-dash_segment_type",
+            "webm",
+            "-window_size",
+            "5",
+            "-extra_window_size",
+            "2",
+            "-utc_timing_url",
+            "https://time.akamai.com/",
+            "-use_timeline",
+            "1",
+            "-use_template",
+            "1",
+            "-seg_duration",
+            "3",
+            "-index_correction",
+            "1",
+            "-ignore_io_errors",
+            "1",
+            "stream.mpd",
         );
 
         debug!("ffmpeg {}", args.join(" "));
@@ -151,7 +153,7 @@ impl Ffmpeg {
                 info!("ffmpeg listening for rtmp connections at {}", rtmp_addr);
             }
 
-            FfmpegInput::File(path) => {
+            FfmpegInput::File { path, seek: _ } => {
                 info!("ffmpeg playing from {}", path.display());
             }
         }
