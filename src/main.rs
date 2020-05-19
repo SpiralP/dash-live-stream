@@ -176,6 +176,8 @@ fn main() -> Result<()> {
         matches.occurrences_of("verbose") > 1,
     );
 
+    let log_http = matches.is_present("verbose");
+
     let tls = matches.is_present("tls");
 
     let input = if let Some(path) = matches.value_of("file") {
@@ -231,8 +233,13 @@ fn main() -> Result<()> {
             let sender = sender.clone();
 
             tokio::spawn(async move {
-                if let Err(e) =
-                    web::start(SocketAddr::new(http_ip, http_port), temp_dir_path, tls).await
+                if let Err(e) = web::start(
+                    SocketAddr::new(http_ip, http_port),
+                    temp_dir_path,
+                    tls,
+                    log_http,
+                )
+                .await
                 {
                     error!("web: {}", e);
                 }

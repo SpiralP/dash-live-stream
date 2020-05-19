@@ -15,7 +15,7 @@ use warp::{fs::File, http::StatusCode, Filter, Rejection, Reply};
 
 const INDEX: &str = include_str!("index.html");
 
-pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool) -> Result<()> {
+pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool, log: bool) -> Result<()> {
     let clients: Arc<Mutex<HashMap<IpAddr, Instant>>> = Default::default();
 
     let checker_handle = {
@@ -71,7 +71,20 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool) -> Result<()>
                 },
             ))
         .recover(handle_rejection)
-        .with(warp::cors().allow_any_origin());
+        .with(warp::cors().allow_any_origin())
+        .with(warp::log::custom(move |info| {
+            if log {
+                debug!(
+                    "{:?} \"{} {}\" {} \"{}\" {:?}",
+                    info.remote_addr(),
+                    info.method(),
+                    info.path(),
+                    info.status().as_u16(),
+                    info.referer().unwrap_or("-"),
+                    info.elapsed(),
+                );
+            }
+        }));
 
     let protocol = if tls { "https" } else { "http" };
 
@@ -83,7 +96,6 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool) -> Result<()>
 
     let server = warp::serve(routes);
     if tls {
-        warn!("detecting client connections won't work for https!");
         let (cert, key) = cert::generate_cert_and_key()?;
 
         let cert_bytes = cert.to_pem()?;
