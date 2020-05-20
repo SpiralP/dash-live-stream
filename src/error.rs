@@ -11,6 +11,6 @@ error_chain! {
         AddrParse(::std::net::AddrParseError);
         Clap(clap::Error);
         Warp(warp::Error);
-        Openssl(openssl::error::ErrorStack);
+        Openssl(openssl::error::ErrorStack) #[cfg(feature = "tls")];
     }
 }

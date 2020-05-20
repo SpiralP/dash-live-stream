@@ -20,7 +20,8 @@ use std::{
 use tokio::runtime::Runtime;
 
 fn main() -> Result<()> {
-    let matches = App::new(crate_name!())
+    #[allow(unused_mut)]
+    let mut app = App::new(crate_name!())
         .version(crate_version!())
         .arg(
             Arg::with_name("verbose")
@@ -28,14 +29,6 @@ fn main() -> Result<()> {
                 .short("v")
                 .help("Show debug messages, use multiple times for higher verbosity")
                 .multiple(true),
-        )
-        .arg(
-            Arg::with_name("tls")
-                .short("s")
-                .long("tls")
-                .alias("ssl")
-                .alias("https")
-                .help("Use secured https"),
         )
         .arg(Arg::with_name("file").help("Play a file instead of starting an rtmp server"))
         .arg(
@@ -168,8 +161,21 @@ fn main() -> Result<()> {
                 .value_name("bitrate")
                 .takes_value(true)
                 .default_value("128k"),
-        )
-        .get_matches();
+        );
+
+    #[cfg(feature = "tls")]
+    {
+        app = app.arg(
+            Arg::with_name("tls")
+                .short("s")
+                .long("tls")
+                .alias("ssl")
+                .alias("https")
+                .help("Use secured https"),
+        );
+    }
+
+    let matches = app.get_matches();
 
     logger::initialize(
         cfg!(debug_assertions) || matches.is_present("verbose"),

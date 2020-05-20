@@ -1,3 +1,4 @@
+#[cfg(feature = "tls")]
 mod cert;
 
 use crate::error::*;
@@ -96,17 +97,20 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool, log: bool) ->
 
     let server = warp::serve(routes);
     if tls {
-        let (cert, key) = cert::generate_cert_and_key()?;
+        #[cfg(feature = "tls")]
+        {
+            let (cert, key) = cert::generate_cert_and_key()?;
 
-        let cert_bytes = cert.to_pem()?;
-        let key_bytes = key.private_key_to_pem_pkcs8()?;
+            let cert_bytes = cert.to_pem()?;
+            let key_bytes = key.private_key_to_pem_pkcs8()?;
 
-        server
-            .tls()
-            .cert(&cert_bytes)
-            .key(&key_bytes)
-            .bind(addr)
-            .await;
+            server
+                .tls()
+                .cert(&cert_bytes)
+                .key(&key_bytes)
+                .bind(addr)
+                .await;
+        }
     } else {
         server.bind(addr).await;
     };
