@@ -7,7 +7,7 @@ use log::*;
 use std::{
     collections::HashMap,
     convert::Infallible,
-    net::{IpAddr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -90,10 +90,27 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool, log: bool) ->
     let protocol = if tls { "https" } else { "http" };
 
     info!("starting {} server at {}://{}/", protocol, protocol, addr);
-    info!(
-        "hosting dash manifest at {}://{}/stream.mpd",
-        protocol, addr
-    );
+
+    {
+        // lookup external/internet ip address
+        let port = addr.port();
+        tokio::spawn(async move {
+            let result = async move {
+                let response_text = reqwest::get("https://api.ipify.org/").await?.text().await?;
+                let ip: Ipv4Addr = response_text.parse()?;
+                Ok::<_, Error>(ip)
+            };
+
+            match result.await {
+                Ok(ip) => {
+                    info!("external link {}://{}:{}/stream.mpd", protocol, ip, port);
+                }
+                Err(e) => {
+                    warn!("error looking up external ip: {}", e);
+                }
+            }
+        });
+    }
 
     let server = warp::serve(routes);
     if tls {

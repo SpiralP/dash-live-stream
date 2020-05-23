@@ -12,5 +12,6 @@ error_chain! {
         Clap(clap::Error);
         Warp(warp::Error);
         Openssl(openssl::error::ErrorStack) #[cfg(feature = "tls")];
+        Reqwest(reqwest::Error);
     }
 }
