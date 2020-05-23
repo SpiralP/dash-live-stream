@@ -16,10 +16,17 @@ pub enum FfmpegInput {
     },
 }
 
+pub enum FfmpegOutput {
+    // temp_dir_path
+    Dash(PathBuf),
+    Rtmp(SocketAddr),
+}
+
 pub struct Ffmpeg {
     pub command: Option<Child>,
 
     pub input: FfmpegInput,
+    pub output: FfmpegOutput,
 
     pub cpu_used: u8,
     pub framerate: u8,
@@ -28,7 +35,6 @@ pub struct Ffmpeg {
     pub video_resolution: String,
     pub audio_bitrate: String,
     pub audio_sample_rate: String,
-    pub temp_dir_path: PathBuf,
     pub subtitles_path: Option<PathBuf>,
 }
 
@@ -99,90 +105,106 @@ impl Ffmpeg {
             }
         }
 
-        append!(
-            args,
-            // video
-            "-c:v",
-            "libvpx-vp9",
-            // https://developers.google.com/media/vp9/live-encoding
-            "-quality",
-            "realtime",
-            "-cpu-used",
-            &format!("{}", self.cpu_used),
-            "-tile-columns",
-            "4",
-            "-frame-parallel",
-            "1",
-            "-threads",
-            &format!("{}", num_cpus::get()),
-            "-static-thresh",
-            "0",
-            "-max-intra-rate",
-            "300",
-            "-lag-in-frames",
-            "0",
-            "-qmin",
-            "4",
-            "-qmax",
-            "48",
-            "-row-mt",
-            "1",
-            "-error-resilient",
-            "1",
-            //
-            "-r",
-            &format!("{}", self.framerate),
-            "-crf",
-            &format!("{}", self.crf),
-            "-b:v",
-            &self.video_bitrate,
-            "-s",
-            &self.video_resolution,
-            // at least 1 keyframe every 60 frames
-            "-keyint_min",
-            "60",
-            "-g",
-            "60",
-            // audio
-            "-c:a",
-            "libvorbis",
-            "-b:a",
-            &self.audio_bitrate,
-            "-ar",
-            &self.audio_sample_rate,
-            // # audio channels
-            "-ac",
-            "2",
-            // output
-            "-f",
-            "dash",
-            // remove chunk files at exit
-            "-remove_at_exit",
-            "1",
-            "-dash_segment_type",
-            "webm",
-            // 5 chunk files in the manifest
-            "-window_size",
-            "5",
-            // 2 extra chunk files not in the manifest
-            // before getting deleted
-            "-extra_window_size",
-            "2",
-            "-utc_timing_url",
-            "https://time.akamai.com/",
-            "-use_timeline",
-            "1",
-            "-use_template",
-            "1",
-            // 3 seconds each chunk file
-            "-seg_duration",
-            "3",
-            "-index_correction",
-            "1",
-            "-ignore_io_errors",
-            "1",
-            "stream.mpd",
-        );
+        match &self.output {
+            FfmpegOutput::Dash(_temp_dir_path) => {
+                append!(
+                    args,
+                    // video
+                    "-c:v",
+                    "libvpx-vp9",
+                    // https://developers.google.com/media/vp9/live-encoding
+                    "-quality",
+                    "realtime",
+                    "-cpu-used",
+                    &format!("{}", self.cpu_used),
+                    "-tile-columns",
+                    "4",
+                    "-frame-parallel",
+                    "1",
+                    "-threads",
+                    &format!("{}", num_cpus::get()),
+                    "-static-thresh",
+                    "0",
+                    "-max-intra-rate",
+                    "300",
+                    "-lag-in-frames",
+                    "0",
+                    "-qmin",
+                    "4",
+                    "-qmax",
+                    "48",
+                    "-row-mt",
+                    "1",
+                    "-error-resilient",
+                    "1",
+                    //
+                    "-r",
+                    &format!("{}", self.framerate),
+                    "-crf",
+                    &format!("{}", self.crf),
+                    "-b:v",
+                    &self.video_bitrate,
+                    "-s",
+                    &self.video_resolution,
+                    // at least 1 keyframe every 60 frames
+                    "-keyint_min",
+                    "60",
+                    "-g",
+                    "60",
+                    // audio
+                    "-c:a",
+                    "libvorbis",
+                    "-b:a",
+                    &self.audio_bitrate,
+                    "-ar",
+                    &self.audio_sample_rate,
+                    // # audio channels
+                    "-ac",
+                    "2"
+                );
+
+                append!(
+                    args,
+                    // output
+                    "-f",
+                    "dash",
+                    // remove chunk files at exit
+                    "-remove_at_exit",
+                    "1",
+                    "-dash_segment_type",
+                    "webm",
+                    // 5 chunk files in the manifest
+                    "-window_size",
+                    "5",
+                    // 2 extra chunk files not in the manifest
+                    // before getting deleted
+                    "-extra_window_size",
+                    "2",
+                    "-utc_timing_url",
+                    "https://time.akamai.com/",
+                    "-use_timeline",
+                    "1",
+                    "-use_template",
+                    "1",
+                    // 3 seconds each chunk file
+                    "-seg_duration",
+                    "3",
+                    "-index_correction",
+                    "1",
+                    "-ignore_io_errors",
+                    "1",
+                    "stream.mpd",
+                );
+            }
+
+            FfmpegOutput::Rtmp(addr) => {
+                let rtmp_addr = format!("rtmp://{}/{}/{}", addr, stream_path, stream_key);
+                append!(
+                    args, // output
+                    "-f", "flv", rtmp_addr
+                );
+            }
+        }
 
         debug!("ffmpeg {}", args.join(" "));
 
@@ -197,10 +219,13 @@ impl Ffmpeg {
             }
         }
 
-        let command = Command::new("ffmpeg")
-            .args(args)
-            .current_dir(&self.temp_dir_path)
-            .spawn()?;
+        let command = match &self.output {
+            FfmpegOutput::Dash(temp_dir_path) => Command::new("ffmpeg")
+                .args(args)
+                .current_dir(temp_dir_path)
+                .spawn()?,
+            FfmpegOutput::Rtmp(_addr) => Command::new("ffmpeg").args(args).spawn()?,
+        };
 
         self.command = Some(command);
 

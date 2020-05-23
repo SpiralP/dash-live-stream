@@ -6,7 +6,7 @@ mod web;
 
 use crate::{
     error::*,
-    ffmpeg::{Ffmpeg, FfmpegInput},
+    ffmpeg::{Ffmpeg, FfmpegInput, FfmpegOutput},
     helpers::*,
 };
 use clap::{crate_name, crate_version, App, Arg};
@@ -46,6 +46,13 @@ fn main() -> Result<()> {
                 .help("Use a subtitles file to hardsub subtitles into the video track")
                 .value_name("file")
                 .takes_value(true)
+        )
+        .arg(
+            Arg::with_name("remote-rtmp")
+                .long("remote")
+                .help("Instead of hosting a dash server, stream to a remote rtmp server")
+                .value_name("address")
+                .takes_value(true),
         )
         .arg(
             Arg::with_name("rtmp-ip")
@@ -219,8 +226,15 @@ fn main() -> Result<()> {
     let temp_dir = tempfile::Builder::new()
         .prefix(&format!(".{}", crate_name!()))
         .tempdir()?;
+
     let temp_dir_path = temp_dir.path().to_owned();
     debug!("created temp dir {:?}", temp_dir_path);
+
+    let output = if let Some(addr) = matches.value_of("remote-rtmp") {
+        FfmpegOutput::Rtmp(addr.parse()?)
+    } else {
+        FfmpegOutput::Dash(temp_dir_path)
+    };
 
     let mut rt = Runtime::new()?;
     rt.block_on(async move {
@@ -234,29 +248,38 @@ fn main() -> Result<()> {
             .expect("Error setting Ctrl-C handler");
         }
 
-        {
-            let temp_dir_path = temp_dir_path.clone();
-            let sender = sender.clone();
+        match &output {
+            FfmpegOutput::Dash(temp_dir_path) => {
+                // only start http server if we're going to use it
 
-            tokio::spawn(async move {
-                if let Err(e) = web::start(
-                    SocketAddr::new(http_ip, http_port),
-                    temp_dir_path,
-                    tls,
-                    log_http,
-                )
-                .await
-                {
-                    error!("web: {}", e);
-                }
-                let _ignore = sender.unbounded_send(());
-            });
+                let temp_dir_path = temp_dir_path.clone();
+                let sender = sender.clone();
+
+                tokio::spawn(async move {
+                    if let Err(e) = web::start(
+                        SocketAddr::new(http_ip, http_port),
+                        temp_dir_path,
+                        tls,
+                        log_http,
+                    )
+                    .await
+                    {
+                        error!("web: {}", e);
+                    }
+                    let _ignore = sender.unbounded_send(());
+                });
+            }
+
+            FfmpegOutput::Rtmp(addr) => {
+                info!("sending to remote rtmp at {}", addr);
+            }
         }
 
         {
             let mut ffmpeg = Ffmpeg {
                 command: None,
                 input,
+                output,
                 cpu_used,
                 framerate,
                 crf,
@@ -264,7 +287,6 @@ fn main() -> Result<()> {
                 video_resolution,
                 audio_bitrate,
                 audio_sample_rate,
-                temp_dir_path,
                 subtitles_path,
             };
 
