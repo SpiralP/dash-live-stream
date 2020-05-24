@@ -107,6 +107,7 @@ impl Ffmpeg {
 
         match &self.output {
             FfmpegOutput::Dash(_temp_dir_path) => {
+                // conversion to vp9/vorbis
                 append!(
                     args,
                     // video
@@ -163,9 +164,9 @@ impl Ffmpeg {
                     "2"
                 );
 
+                // output
                 append!(
                     args,
-                    // output
                     "-f",
                     "dash",
                     // remove chunk files at exit
@@ -173,36 +174,46 @@ impl Ffmpeg {
                     "1",
                     "-dash_segment_type",
                     "webm",
-                    // 5 chunk files in the manifest
+                    // 5 chunk files in the manifest, 10 seconds of media in the manifest
                     "-window_size",
                     "5",
-                    // 2 extra chunk files not in the manifest
+                    // 2 extra chunk files not in the manifest, 4 extra seconds
                     // before getting deleted
                     "-extra_window_size",
                     "2",
                     "-utc_timing_url",
                     "https://time.akamai.com/",
-                    "-use_timeline",
-                    "1",
+                    // template will use media="chunk-stream$RepresentationID$-$Number%05d$.webm"
+                    // so the client knows where all the files are without fetching manifest again
+                    // we don't want to use template because then the client will expect segments
+                    // that might not exist because of a slow encoder
                     "-use_template",
-                    "1",
-                    // 3 seconds each chunk file
+                    "0",
+                    // if template isn't used, timeline isn't used
+                    "-use_timeline",
+                    "0",
+                    // 2 seconds each chunk file
+                    // using 1 second causes issues:
+                    // Correcting the segment index after file chunk-stream0-00017.webm: current=18 corrected=19
                     "-seg_duration",
-                    "3",
+                    "2",
                     "-index_correction",
                     "1",
                     "-ignore_io_errors",
                     "1",
+                    // "One or more streams in WebM output format. Streaming option will be ignored"
+                    // "-streaming",
+                    // "0",
+                    // "LDash option will be ignored as streaming is not enabled"
+                    // "-ldash",
+                    // "0",
                     "stream.mpd",
                 );
             }
 
             FfmpegOutput::Rtmp(addr) => {
                 let rtmp_addr = format!("rtmp://{}/{}/{}", addr, stream_path, stream_key);
-                append!(
-                    args, // output
-                    "-f", "flv", rtmp_addr
-                );
+                append!(args, "-f", "flv", rtmp_addr);
             }
         }
 
