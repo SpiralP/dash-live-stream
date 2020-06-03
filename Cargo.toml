@@ -16,7 +16,7 @@ openssl = { version = "0.10.29", optional = true }
 reqwest = "0.10.6"
 tempfile = "3.1.0"
 tokio = { version = "0.2.21", features = ["rt-core", "rt-threaded", "time"] }
-warp = { git = "https://github.com/seanmonstar/warp.git" }
+warp = "0.2.3"
 
 [features]
 default = ["tls"]
