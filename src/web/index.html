@@ -25,6 +25,11 @@
       player.volume = 1.0;
       window.player = player;
 
+      player.addEventListener("play", (event) => {
+        // seek to live time
+        player.currentTime = shakaPlayer.seekRange().end;
+      });
+
       var manifestUri = "stream.mpd";
 
       function initApp() {

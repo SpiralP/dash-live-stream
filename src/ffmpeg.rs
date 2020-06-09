@@ -161,7 +161,7 @@ impl Ffmpeg {
                     &self.audio_sample_rate,
                     // # audio channels
                     "-ac",
-                    "2"
+                    "2",
                 );
 
                 // output
