@@ -144,6 +144,7 @@ fn main() -> Result<()> {
         )
         .arg(
             Arg::with_name("framerate")
+                .alias("frame-rate")
                 .long("framerate")
                 .help("Sets the framerate of the output video")
                 .value_name("fps")
