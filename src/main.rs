@@ -184,8 +184,9 @@ fn main() -> Result<()> {
 
     let matches = app.get_matches();
 
+    let verbose = matches.is_present("verbose");
     logger::initialize(
-        cfg!(debug_assertions) || matches.is_present("verbose"),
+        cfg!(debug_assertions) || verbose,
         matches.occurrences_of("verbose") > 1,
     );
 
@@ -243,6 +244,7 @@ fn main() -> Result<()> {
         {
             let sender = sender.clone();
             ctrlc::set_handler(move || {
+                info!("stopping...");
                 let _ignore = sender.unbounded_send(());
             })
             .expect("Error setting Ctrl-C handler");
@@ -278,6 +280,7 @@ fn main() -> Result<()> {
         {
             let mut ffmpeg = Ffmpeg {
                 command: None,
+                verbose,
                 input,
                 output,
                 cpu_used,

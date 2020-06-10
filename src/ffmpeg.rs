@@ -24,6 +24,7 @@ pub enum FfmpegOutput {
 
 pub struct Ffmpeg {
     pub command: Option<Child>,
+    pub verbose: bool,
 
     pub input: FfmpegInput,
     pub output: FfmpegOutput,
@@ -53,7 +54,9 @@ impl Ffmpeg {
             };
         }
 
-        append!(args, "-hide_banner", "-loglevel", "warning", "-stats");
+        if !self.verbose {
+            append!(args, "-hide_banner", "-loglevel", "warning", "-stats");
+        }
 
         match &self.input {
             FfmpegInput::Rtmp(addr) => {
@@ -147,11 +150,12 @@ impl Ffmpeg {
                     &self.video_bitrate,
                     "-s",
                     &self.video_resolution,
-                    // at least 1 keyframe every 60 frames
-                    "-keyint_min",
-                    "60",
+                    // at least 1 keyframe every 2 seconds
+                    // to match our chunk duration of 2 seconds
+                    // if this duration is longer than our chunk size,
+                    // dash breaks weirdly where video doesn't encode fast enough
                     "-g",
-                    "60",
+                    &format!("{}", self.framerate * 2),
                     // audio
                     "-c:a",
                     "libvorbis",
