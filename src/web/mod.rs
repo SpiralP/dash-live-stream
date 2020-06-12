@@ -4,12 +4,16 @@ mod cert;
 use crate::error::*;
 use futures::prelude::*;
 use log::*;
+use reqwest::header::CONTENT_LENGTH;
 use std::{
     collections::HashMap,
     convert::Infallible,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
     time::{Duration, Instant},
 };
 use warp::{fs::File, http::StatusCode, Filter, Rejection, Reply};
@@ -18,16 +22,19 @@ const INDEX: &str = include_str!("index.html");
 
 pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool, log: bool) -> Result<()> {
     let clients: Arc<Mutex<HashMap<IpAddr, Instant>>> = Default::default();
+    let sent_bytes: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
 
     let checker_handle = {
         let clients = clients.clone();
+        let sent_bytes = sent_bytes.clone();
 
         let (f, handle) = async move {
-            loop {
-                tokio::time::delay_for(Duration::from_millis(1000)).await;
-                {
-                    let now = Instant::now();
+            let mut max_bytes_per_second = 0;
 
+            loop {
+                tokio::time::delay_for(Duration::from_secs(1)).await;
+                let now = Instant::now();
+                {
                     let mut to_remove = Vec::new();
                     let mut clients = clients.lock().unwrap();
                     for (ip, time) in clients.iter() {
@@ -39,6 +46,19 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool, log: bool) ->
                     for ip in to_remove {
                         clients.remove(&ip);
                         info!("client {} left ({} clients)", ip, clients.len());
+                    }
+                }
+
+                // show bitrate
+                {
+                    let byte_count = sent_bytes.swap(0, Ordering::SeqCst);
+                    if log {
+                        info!("{:.1} kbps", byte_count / 1000);
+                    }
+
+                    if byte_count > max_bytes_per_second {
+                        max_bytes_per_second = byte_count;
+                        info!("new max: {} kbps", max_bytes_per_second / 1000);
                     }
                 }
             }
@@ -54,7 +74,7 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool, log: bool) ->
             .and(warp::header::optional::<IpAddr>("x-forwarded-for"))
             .and(warp::fs::dir(temp_dir.to_owned()))
             .map(
-                move |addr: Option<SocketAddr>, proxy_ip: Option<IpAddr>, f: File| {
+                move |addr: Option<SocketAddr>, proxy_ip: Option<IpAddr>, file: File| {
                     if let Some(ip) = proxy_ip.or_else(|| addr.map(|addr| addr.ip())) {
                         let mut clients = clients.lock().unwrap();
                         let len = clients.len();
@@ -68,7 +88,17 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool, log: bool) ->
                                 Instant::now()
                             });
                     }
-                    f
+
+                    let response = file.into_response();
+                    if let Some(s) = response.headers().get(CONTENT_LENGTH) {
+                        if let Ok(s) = s.to_str() {
+                            if let Ok(byte_count) = s.parse::<usize>() {
+                                sent_bytes.fetch_add(byte_count, Ordering::SeqCst);
+                            }
+                        }
+                    }
+
+                    response
                 },
             ))
         .recover(handle_rejection)
