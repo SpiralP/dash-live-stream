@@ -4,16 +4,18 @@ Simple command line app that hosts a DASH live stream on an http server. Takes i
 
 ## Runtime Requirements
 
-- [FFmpeg](https://www.ffmpeg.org/download.html) 4.2.2
+- [FFmpeg](https://www.ffmpeg.org/download.html) 4.2.2 minimum
 
 ## Compiling
 
 - install openssl
 
-```
+```sh
+# for Windows, build with static openssl and use scoop's file names
 set OPENSSL_STATIC=1
 set OPENSSL_LIBS=libssl_static:libcrypto_static
-cargo build --release
+
+cargo install --git https://github.com/SpiralP/dash-live-stream.git
 ```
 
 ## Usage
