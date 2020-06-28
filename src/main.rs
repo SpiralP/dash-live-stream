@@ -173,14 +173,33 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "tls")]
     {
-        app = app.arg(
-            Arg::with_name("tls")
-                .short("s")
-                .long("tls")
-                .alias("ssl")
-                .alias("https")
-                .help("Use secured https"),
-        );
+        app = app
+            .arg(
+                Arg::with_name("tls")
+                    .short("s")
+                    .long("tls")
+                    .alias("ssl")
+                    .alias("https")
+                    .help("Use secured https"),
+            )
+            .arg(
+                Arg::with_name("tls-cert")
+                    .long("tls-cert")
+                    .alias("ssl-cert")
+                    .alias("https-cert")
+                    .help("Use specific https certificate")
+                    .value_name("file")
+                    .takes_value(true),
+            )
+            .arg(
+                Arg::with_name("tls-key")
+                    .long("tls-key")
+                    .alias("ssl-key")
+                    .alias("https-key")
+                    .help("Use specific https key")
+                    .value_name("file")
+                    .takes_value(true),
+            );
     }
 
     let matches = app.get_matches();
@@ -193,7 +212,9 @@ fn main() -> Result<()> {
 
     let log_http = matches.is_present("verbose");
 
-    let tls = matches.is_present("tls");
+    let tls_cert_path = matches.value_of("tls-cert").map(PathBuf::from);
+    let tls_key_path = matches.value_of("tls-key").map(PathBuf::from);
+    let tls = matches.is_present("tls") || tls_cert_path.is_some() || tls_key_path.is_some();
 
     let input = if let Some(path) = matches.value_of("file") {
         let path = PathBuf::from(path);
@@ -262,8 +283,10 @@ fn main() -> Result<()> {
                     if let Err(e) = web::start(
                         SocketAddr::new(http_ip, http_port),
                         temp_dir_path,
-                        tls,
                         log_http,
+                        tls,
+                        tls_cert_path,
+                        tls_key_path,
                     )
                     .await
                     {

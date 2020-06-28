@@ -20,9 +20,16 @@ use warp::{fs::File, http::StatusCode, Filter, Rejection, Reply};
 
 const INDEX: &str = include_str!("index.html");
 
-pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool, log: bool) -> Result<()> {
+pub async fn start(
+    addr: SocketAddr,
+    temp_dir: PathBuf,
+    log: bool,
+    tls: bool,
+    maybe_cert_path: Option<PathBuf>,
+    maybe_key_path: Option<PathBuf>,
+) -> Result<()> {
     let clients: Arc<Mutex<HashMap<IpAddr, Instant>>> = Default::default();
-    let sent_bytes: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
+    let sent_bytes = Arc::new(AtomicUsize::new(0));
 
     let checker_handle = {
         let clients = clients.clone();
@@ -151,12 +158,21 @@ pub async fn start(addr: SocketAddr, temp_dir: PathBuf, tls: bool, log: bool) ->
             let cert_bytes = cert.to_pem()?;
             let key_bytes = key.private_key_to_pem_pkcs8()?;
 
-            server
-                .tls()
-                .cert(&cert_bytes)
-                .key(&key_bytes)
-                .bind(addr)
-                .await;
+            let mut server = server.tls();
+
+            if let Some(cert_path) = maybe_cert_path {
+                server = server.cert_path(cert_path);
+            } else {
+                server = server.cert(&cert_bytes);
+            }
+
+            if let Some(key_path) = maybe_key_path {
+                server = server.key_path(key_path);
+            } else {
+                server = server.key(&key_bytes);
+            }
+
+            server.bind(addr).await;
         }
     } else {
         server.bind(addr).await;
