@@ -39,7 +39,7 @@ pub async fn start(
             let mut max_bytes_per_second = 0;
 
             loop {
-                tokio::time::delay_for(Duration::from_secs(1)).await;
+                tokio::time::sleep(Duration::from_secs(1)).await;
                 let now = Instant::now();
                 {
                     let mut to_remove = Vec::new();
@@ -109,20 +109,21 @@ pub async fn start(
                 },
             ))
         .recover(handle_rejection)
-        .with(warp::cors().allow_any_origin())
-        .with(warp::log::custom(move |info| {
-            if log {
-                debug!(
-                    "{:?} \"{} {}\" {} \"{}\" {:?}",
-                    info.remote_addr(),
-                    info.method(),
-                    info.path(),
-                    info.status().as_u16(),
-                    info.referer().unwrap_or("-"),
-                    info.elapsed(),
-                );
-            }
-        }));
+        .with(warp::cors().allow_any_origin());
+    // TODO this code is causing "higher-ranked lifetime error" and i don't know why
+    // .with(warp::log::custom(move |info| {
+    //     if log {
+    //         debug!(
+    //             "{:?} \"{} {}\" {} \"{}\" {:?}",
+    //             info.remote_addr(),
+    //             info.method(),
+    //             info.path(),
+    //             info.status().as_u16(),
+    //             info.referer().unwrap_or("-"),
+    //             info.elapsed(),
+    //         );
+    //     }
+    // }));
 
     let protocol = if tls { "https" } else { "http" };
 

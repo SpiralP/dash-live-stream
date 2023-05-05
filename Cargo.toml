@@ -5,19 +5,19 @@ authors = ["SpiralP <spiral.palmer@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-clap = "2.33.1"
-ctrlc = "3.1.4"
+clap = { version="4", features = ["cargo"] }
+ctrlc = "3"
 env_logger = { git = "https://github.com/SpiralP/env_logger_clear_line.git" }
-error-chain = "0.12.2"
-futures = "0.3.5"
-log = "0.4.8"
-num_cpus = "1.13.0"
-openssl = { version = "0.10.48", optional = true }
-reqwest = "0.10.6"
-tempfile = "3.1.0"
-tokio = { version = "0.2.21", features = ["rt-core", "rt-threaded", "time"] }
-warp = "0.3.3"
+error-chain = "0.12"
+futures = "0.3"
+log = "0.4"
+num_cpus = "1"
+openssl = { version = "0.10", optional = true }
+reqwest = "0.11"
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
+warp = "0.3"
 
 [features]
-default = ["tls"]
+default = []
 tls = ["openssl", "warp/tls"]

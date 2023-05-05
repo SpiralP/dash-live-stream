@@ -158,6 +158,7 @@ impl Ffmpeg {
                     &format!("{}", self.framerate * 2),
                     // audio
                     "-c:a",
+                    // TODO why not opus?
                     "libvorbis",
                     "-b:a",
                     &self.audio_bitrate,
@@ -245,7 +246,7 @@ impl Ffmpeg {
         self.command = Some(command);
 
         loop {
-            tokio::time::delay_for(Duration::from_millis(500)).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
 
             {
                 if let Some(command) = self.command.as_mut() {
